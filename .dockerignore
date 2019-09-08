@@ -1,0 +1,16 @@
+_database
+_docker
+.git
+.gitignore
+.temp
+.vscode
+CHANGELOG.md
+coverage
+node_modules
+src
+gulpfile.js
+README.md
+npm-debug.log
+tsconfig.json
+tslint.json
+typings

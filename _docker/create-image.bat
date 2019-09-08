@@ -1,0 +1,1 @@
+docker build -t gennovative/event-checkin-rest-server:vpbank-2.3.0 -f ./Dockerfile ..

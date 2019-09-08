@@ -1,0 +1,42 @@
+{
+    "name": "micro-fleet-simple-monolith-server",
+    "version": "1.0.0",
+    "description": "Project scaffolding for MicroFleet framework, demonstrating an advanced monolith service.",
+    "scripts": {
+        "dev": "cross-env DEBUG=scaffold:* nodemon --watch dist/app dist/app/server.js",
+        "start": "node ./dist/app/server.js",
+        "build": "npm run clean && npm run lint && tsc --pretty",
+        "watch": "npm run clean && npm run lint && tsc --watch --pretty",
+        "lint": "tslint --fix -p tsconfig.json --exclude '**/*.d.ts'",
+        "clean": "rimraf dist coverage .nyc_output"
+    },
+    "dependencies": {
+        "@micro-fleet/common": "=2.3.0-rc1",
+        "@micro-fleet/microservice": "=2.3.0-rc1",
+        "@micro-fleet/persistence": "=2.3.0-rc1",
+        "@micro-fleet/web": "=2.3.0-rc1",
+        "debug": "~4.1",
+        "moment": "~2.24"
+    },
+    "devDependencies": {
+        "@types/debug": "~4.1",
+        "@types/moment": "~2.13",
+        "@types/node": "~10.14",
+        "cross-env": "~5.2",
+        "knex": "~0.19",
+        "nodemon": "~1.19",
+        "pg": "~7.12",
+        "rimraf": "~3.0",
+        "tslint": "~5.19",
+        "typescript": "~3.6"
+    },
+    "author": {
+        "name": "gennovative",
+        "url": "https://github.com/gennovative"
+    },
+    "engines": {
+        "node": ">=10.4.0"
+    },
+    "repository": "git@github.com:gennovative/micro-fleet-scaffolding-simple-monolith.git",
+    "private": true
+}
