@@ -1,8 +1,8 @@
 /// <reference types="debug" />
 const debug: debug.IDebugger = require('debug')('scaffold:ctrl:user')
 
-import { decorators as cd, SingleId, Maybe } from '@micro-fleet/common'
-import { decorators as wd, Response, RestControllerBase } from '@micro-fleet/web'
+import { decorators as cd, TenantId } from '@micro-fleet/common'
+import { decorators as wd, Request, Response, RestControllerBase } from '@micro-fleet/web'
 import { SortType, Types as pT, AtomicSessionFactory, AtomicSession } from '@micro-fleet/persistence'
 
 import { Types as T } from '../constants/Types'
@@ -26,8 +26,8 @@ export default class UserController extends RestControllerBase {
      * @example /api/v1/users/123654
      */
     @wd.GET(':id')
-    public getOne(@wd.param('id') id: Maybe<string>) {
-        return this._userRepo.findById(new SingleId(id.value))
+    public getOne(@wd.param('id') id: string, @wd.extras('tenantId') tenantId: string) {
+        return this._userRepo.findById(new TenantId(id, tenantId))
     }
 
     /**
@@ -35,13 +35,18 @@ export default class UserController extends RestControllerBase {
      * @example /api/v1/users?pageIndex=2&pageSize=10
      */
     @wd.GET('/')
-    public getList(@wd.query('pageIndex') index: number, @wd.query('pageSize') size: number) {
+    public getList(
+        @wd.query('pageIndex') index: number,
+        @wd.query('pageSize') size: number,
+        @wd.extras('tenantId') tenantId: string,
+    ) {
         return this._userRepo.page({
             pageIndex: index,
             pageSize: size,
             fields: ['id', 'name'],
             sortBy: 'name',
             sortType: SortType.DESC,
+            tenantId,
         })
     }
 
@@ -62,7 +67,12 @@ export default class UserController extends RestControllerBase {
      * }
      */
     @wd.POST('/')
-    public async create(@wd.model() user: User, @wd.response() res: Response) {
+    public async create(
+        @wd.model({
+            postProcessFn: (m: User, r: Request) => m.tenantId = r.extras.tenantId,
+        }) user: User,
+        @wd.response() res: Response
+    ) {
         const result = await this._userRepo.create(user)
         return this.created(res, result)
     }
@@ -83,7 +93,13 @@ export default class UserController extends RestControllerBase {
      * ]
      */
     @wd.POST('/many')
-    public async createMany(@wd.model(User) users: User[], @wd.response() res: Response) {
+    public async createMany(
+        @wd.model({
+            ItemClass: User,
+            postProcessFn: (m: User, r: Request) => m.tenantId = r.extras.tenantId,
+        }) users: User[],
+        @wd.response() res: Response
+    ) {
         // Starts a transaction
         // Making sure all users are either created or not created.
         const results = await this._sessionFactory.startSession()
@@ -108,6 +124,7 @@ export default class UserController extends RestControllerBase {
         @wd.model({
             isPartial: true,
             ItemClass: User,
+            postProcessFn: (m: User, r: Request) => m.tenantId = r.extras.tenantId,
         }) user: Partial<User>,
     ) {
         return this._userRepo.patch(user)
@@ -118,7 +135,7 @@ export default class UserController extends RestControllerBase {
      * @example /api/v1/users/123654
      */
     @wd.DELETE(':id')
-    public delete(@wd.param('id') id: string) {
-        return this._userRepo.deleteSingle(new SingleId(id))
+    public delete(@wd.param('id') id: string, @wd.extras('tenantId') tenantId: string) {
+        return this._userRepo.deleteSingle(new TenantId(id, tenantId))
     }
 }

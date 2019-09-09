@@ -1,21 +1,29 @@
-import { PagedData, TenantId, Maybe, ITranslatable,
+import { PagedData, Maybe, ITranslatable, IdBase, SingleId,
     decorators as d } from '@micro-fleet/common'
-import { IRepository, AtomicSessionFactory, AtomicSession, RepositoryFindOptions } from '@micro-fleet/persistence'
+import { IRepository, AtomicSessionFactory, AtomicSession } from '@micro-fleet/persistence'
 
 import { ResultResponseConstructor, MaybeResponseConstructor, ListResponseConstructor,
     IAtomicRequest, IMultiIds } from '../models/dto/dto-base'
 import { momentify } from '../utils/date-utils'
 
 
+function buidSingleId(params: IMultiIds): any {
+    return new SingleId(params.ids[0]) as any
+}
+
+function buidMultipleId(params: IMultiIds): any {
+    return params.ids.map(id => new SingleId(id))
+}
+
 /**
  * Provides methods for common CRUD operations
  */
 @d.injectable()
-export class ManagementServiceBase<TDomain extends object> {
+export class ManagementServiceBase<TDomain extends object, TId extends IdBase = SingleId> {
 
     constructor(
         protected readonly $DomainClass: ITranslatable,
-        protected readonly $repo: IRepository<TDomain, TenantId>,
+        protected readonly $repo: IRepository<TDomain, TId>,
         protected readonly $sessionFactory: AtomicSessionFactory,
     ) {}
 
@@ -48,15 +56,19 @@ export class ManagementServiceBase<TDomain extends object> {
 
     //#region Delete
 
-    protected async $hardDeleteSingle<T extends InstanceType<ResultResponseConstructor>>(params: IMultiIds,
-            ResponseClass: ResultResponseConstructor): Promise<T> {
+    protected async $hardDeleteSingle<T extends InstanceType<ResultResponseConstructor>>(
+        params: IMultiIds,
+        ResponseClass: ResultResponseConstructor,
+        buildIdFn?: (param: IMultiIds) => TId,
+    ): Promise<T> {
         const violation = await this.$checkDeleteSingleViolation(params)
         if (violation.isJust) {
             return new ResponseClass(false, violation.value) as T
         }
 
-        const tenantPk = new TenantId(params.ids[0], params.tenantId)
-        const affectedCount: number = await this.$repo.deleteSingle(tenantPk)
+        buildIdFn = buildIdFn || buidSingleId
+        const id = buildIdFn(params)
+        const affectedCount: number = await this.$repo.deleteSingle(id)
         if (affectedCount) {
             const result = ResponseClass.from({
                 deletedAt: momentify().format(),
@@ -74,24 +86,28 @@ export class ManagementServiceBase<TDomain extends object> {
     }
 
 
-    protected async $hardDeleteMany<T extends InstanceType<ResultResponseConstructor>>(params: IAtomicRequest & IMultiIds,
-            ResponseClass: ResultResponseConstructor): Promise<T> {
+    protected async $hardDeleteMany<T extends InstanceType<ResultResponseConstructor>>(
+        params: IAtomicRequest & IMultiIds,
+        ResponseClass: ResultResponseConstructor,
+        buildIdFn?: (param: IMultiIds) => TId[],
+    ): Promise<T> {
         const violation = await this.$checkDeleteManyViolation(params)
         if (violation.isJust) {
             return new ResponseClass(false, violation.value) as T
         }
 
-        const tenantPks = params.ids.map(id => new TenantId(id, params.tenantId))
+        buildIdFn = buildIdFn || buidMultipleId
+        const ids = buildIdFn(params)
         let task: Promise<number>
         if (params.isAtomic) {
             task = this.$sessionFactory.startSession()
                 .pipe((atomicSession: AtomicSession) => {
-                    return this.$repo.deleteMany(tenantPks, { atomicSession })
+                    return this.$repo.deleteMany(ids, { atomicSession })
                 })
                 .closePipe()
         }
         else {
-            task = this.$repo.deleteMany(tenantPks)
+            task = this.$repo.deleteMany(ids)
         }
         const affectedCount: number = await task
         if (affectedCount) {
@@ -143,13 +159,17 @@ export class ManagementServiceBase<TDomain extends object> {
 
     //#region Get
 
-    protected async $getDetails<CT extends InstanceType<MaybeResponseConstructor>>(params: any,
-            ResponseClass: MaybeResponseConstructor): Promise<CT> {
-        type SpreadParam = {id: string, tenantId?: string} & RepositoryFindOptions
-        const { id, tenantId, ...opts }: SpreadParam = params
+    protected async $getById<CT extends InstanceType<MaybeResponseConstructor>>(
+        params: any,
+        ResponseClass: MaybeResponseConstructor,
+        buildIdFn?: (param: IMultiIds) => TId,
+    ): Promise<CT> {
+        // type SpreadParam = {id: string, tenantId?: string} & RepositoryFindOptions
+        // const { id, tenantId, ...opts }: SpreadParam = params
 
-        const tenantPk = new TenantId(id, tenantId)
-        const maybe = await this.$repo.findById(tenantPk, opts)
+        buildIdFn = buildIdFn || buidSingleId
+        const id = buildIdFn(params)
+        const maybe = await this.$repo.findById(id, params)
         if (maybe.isJust) {
             const result = ResponseClass.from(maybe.value)
             return result
@@ -170,4 +190,21 @@ export class ManagementServiceBase<TDomain extends object> {
 
     //#endregion Get
 
+    /**
+     * Converts string array to Objection's relation expression
+     * @example
+     *
+     * Input: ['tenant', 'category']
+     * Output: {
+     *   tenant: true,
+     *   category: true,
+     * }
+     */
+    protected objectifyRelations(relations: string[]): object {
+        if (!relations) { return null }
+        return relations.reduce((prev, cur) => {
+            prev[cur] = true
+            return prev
+        }, {})
+    }
 }

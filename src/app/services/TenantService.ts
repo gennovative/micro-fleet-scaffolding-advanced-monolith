@@ -1,22 +1,67 @@
-import { PagedData, TenantId, Maybe,
-    decorators as d } from '@micro-fleet/common'
-import { AtomicSessionFactory, AtomicSession, RepositoryFindOptions, Types as pT } from '@micro-fleet/persistence'
+import { Maybe, decorators as d } from '@micro-fleet/common'
+import { AtomicSessionFactory, Types as pT } from '@micro-fleet/persistence'
 
 import { Types as T } from '../constants/Types'
-import { ResultResponseConstructor, MaybeResponseConstructor, ListResponseConstructor,
-    IAtomicRequest, IMultiIds } from '../models/dto/dto-base'
 import { Tenant } from '../models/domain/Tenant'
 import * as dto from '../models/dto/tenant'
-import { momentify } from '../utils/date-utils'
-import { ManagementServiceBase } from './ManagementServiceBase'
 import { ITenantRepository } from '../repositories/TenantRepository'
+import { ManagementServiceBase } from './ManagementServiceBase'
+import { IUserService } from './UserService'
 
 
 /**
  * Provides methods for common CRUD operations
  */
-@d.injectable()
-export class TenantService extends ManagementServiceBase<Tenant> {
+export interface ITenantService {
+    /**
+     * Creates new tenant
+     */
+    create(params: dto.CreateTenantRequest): Promise<dto.CreateTenantResponse>
+
+    /**
+     * Modifies some properties of a tenant
+     */
+    edit(params: dto.EditTenantRequest): Promise<dto.EditTenantResponse>
+
+    /**
+     * Checks if a tenant with specified slug exists
+     */
+    exists(params: dto.ExistTenantRequest): Promise<dto.ExistTenantResponse>
+
+    /**
+     * Gets a tenant's details by ID
+     */
+    getById(params: dto.GetTenantByIdRequest): Promise<dto.GetSingleTenantResponse>
+
+    /**
+     * Gets a tenant's details by slug
+     */
+    getBySlug(params: dto.GetTenantBySlugRequest): Promise<dto.GetSingleTenantResponse>
+
+    /**
+     * Gets a paged list of tenants
+     */
+    getList(params: dto.GetTenantListRequest): Promise<dto.GetTenantListResponse>
+
+    /**
+     * Permanently deletes a tenant and optionally its associated users.
+     */
+    hardDeleteSingle(params: dto.DeleteTenantRequest): Promise<dto.DeleteTenantResponse>
+
+    /**
+     * Permanently deletes many tenants and optionally their associated users.
+     */
+    hardDeleteMany(params: dto.DeleteTenantRequest): Promise<dto.DeleteTenantResponse>
+}
+
+
+export class TenantService
+    extends ManagementServiceBase<Tenant>
+    implements ITenantService {
+
+    // Lazy injection to avoid circular dependency in constructor
+    @d.lazyInject(T.USER_SVC)
+    private _userSvc: IUserService
 
     constructor(
         @d.inject(T.TENANT_REPO) repo: ITenantRepository,
@@ -28,6 +73,9 @@ export class TenantService extends ManagementServiceBase<Tenant> {
 
     //#region Create
 
+    /**
+     * @see ITenantService.create
+     */
     public create(params: dto.CreateTenantRequest): Promise<dto.CreateTenantResponse> {
         return this.$create(params, dto.CreateTenantResponse)
     }
@@ -37,7 +85,7 @@ export class TenantService extends ManagementServiceBase<Tenant> {
      */
     protected async $checkCreateViolation(params: dto.CreateTenantRequest): Promise<Maybe<string>> {
         if (await this.$repo.exists({ slug: params.slug })) {
-            return Maybe.Just('TENANT_SLUG_ALREADY_EXISTING')
+            return Maybe.Just('TENANT_SLUG_ALREADY_EXISTS')
         }
         return Maybe.Nothing()
     }
@@ -45,126 +93,93 @@ export class TenantService extends ManagementServiceBase<Tenant> {
     //#endregion Create
 
 
-    //#region Delete
-
-    protected async $hardDeleteSingle<T extends InstanceType<ResultResponseConstructor>>(params: IMultiIds,
-            ResponseClass: ResultResponseConstructor): Promise<T> {
-        const violation = await this.$checkDeleteSingleViolation(params)
-        if (violation.isJust) {
-            return new ResponseClass(false, violation.value) as T
-        }
-
-        const tenantPk = new TenantId(params.ids[0], params.tenantId)
-        const affectedCount: number = await this.$repo.deleteSingle(tenantPk)
-        if (affectedCount) {
-            const result = ResponseClass.from({
-                deletedAt: momentify().format(),
-            })
-            return result
-        }
-        return new ResponseClass(false) as T
-    }
-
-    /**
-     * Can be overriden by derived class to check business rule for deleting.
-     */
-    protected $checkDeleteSingleViolation(params: any): Promise<Maybe> {
-        return Promise.resolve(Maybe.Nothing())
-    }
-
-
-    protected async $hardDeleteMany<T extends InstanceType<ResultResponseConstructor>>(params: IAtomicRequest & IMultiIds,
-            ResponseClass: ResultResponseConstructor): Promise<T> {
-        const violation = await this.$checkDeleteManyViolation(params)
-        if (violation.isJust) {
-            return new ResponseClass(false, violation.value) as T
-        }
-
-        const tenantPks = params.ids.map(id => new TenantId(id, params.tenantId))
-        let task: Promise<number>
-        if (params.isAtomic) {
-            task = this.$sessionFactory.startSession()
-                .pipe((atomicSession: AtomicSession) => {
-                    return this.$repo.deleteMany(tenantPks, { atomicSession })
-                })
-                .closePipe()
-        }
-        else {
-            task = this.$repo.deleteMany(tenantPks)
-        }
-        const affectedCount: number = await task
-        if (affectedCount) {
-            const result = ResponseClass.from({
-                deletedAt: momentify().format(),
-            })
-            return result
-        }
-        return new ResponseClass(false) as T
-    }
-
-    /**
-     * Can be overriden by derived class to check business rule for deleting.
-     */
-    protected $checkDeleteManyViolation(params: any): Promise<Maybe> {
-        return Promise.resolve(Maybe.Nothing())
-    }
-
-    //#endregion Delete
-
-
     //#region Edit
 
-    protected async $edit<CT extends InstanceType<ResultResponseConstructor>>(params: any,
-            ResponseClass: ResultResponseConstructor): Promise<CT> {
-        const violation = await this.$checkEditViolation(params)
-        if (violation.isJust) {
-            return new ResponseClass(false, violation.value) as CT
-        }
-
-        const partialDomainModel = this.$DomainClass.from(params)
-        const maybe = await this.$repo.patch(partialDomainModel)
-        if (maybe.isJust) {
-            const result = ResponseClass.from(maybe.value)
-            return result
-        }
-        return new ResponseClass(false) as CT
+    /**
+     * @see ITenantService.edit
+     */
+    public async edit(params: dto.EditTenantRequest): Promise<dto.EditTenantResponse> {
+        return this.$edit(params, dto.EditTenantResponse)
     }
 
     /**
-     * Can be overriden by derived class to check business rule for editing.
+     * @override
      */
-    protected $checkEditViolation(params: any): Promise<Maybe> {
+    protected $checkEditViolation(params: dto.EditTenantRequest): Promise<Maybe> {
         return Promise.resolve(Maybe.Nothing())
     }
 
     //#endregion Edit
 
 
-    //#region Get
-
-    protected async $getDetails<CT extends InstanceType<MaybeResponseConstructor>>(params: any,
-            ResponseClass: MaybeResponseConstructor): Promise<CT> {
-        type SpreadParam = {id: string, tenantId?: string} & RepositoryFindOptions
-        const { id, tenantId, ...opts }: SpreadParam = params
-
-        const tenantPk = new TenantId(id, tenantId)
-        const maybe = await this.$repo.findById(tenantPk, opts)
-        if (maybe.isJust) {
-            const result = ResponseClass.from(maybe.value)
-            return result
-        }
-        return new ResponseClass(false) as CT
+    /**
+     * @see ITenantService.exists
+     */
+    public async exists(params: dto.ExistTenantRequest): Promise<dto.ExistTenantResponse> {
+        return new dto.ExistTenantResponse(
+            await this.$repo.exists(params)
+        )
     }
 
-    protected async $getList<CT extends InstanceType<ListResponseConstructor>>(params: any,
-            ResponseClass: ListResponseConstructor): Promise<CT> {
-        const fetchedDomainModels: PagedData<TDomain> = await this.$repo.page(params)
 
-        if (fetchedDomainModels.length) {
-            const result = ResponseClass.from(fetchedDomainModels)
-            return result
+    //#region Delete
+
+    /**
+     * @see ITenantService.hardDeleteSingle
+     */
+    public async hardDeleteSingle(params: dto.DeleteTenantRequest): Promise<dto.DeleteTenantResponse> {
+        return this.$hardDeleteSingle(params, dto.DeleteTenantResponse)
+    }
+
+    /**
+     * @override
+     */
+    protected async $checkDeleteSingleViolation(params: dto.DeleteTenantRequest): Promise<Maybe> {
+        if (params.isCascading) {
+            const result = await this._userSvc.count({ tenantId: params.ids[0] })
+            return (result.total > 0) ? Maybe.Just('TENANT_IS_ASSOCIATED_BY_USERS') : Maybe.Nothing()
         }
-        return new ResponseClass() as CT
+        return Maybe.Nothing()
+    }
+
+    /**
+     * @see ITenantService.hardDeleteMany
+     */
+    public async hardDeleteMany(params: dto.DeleteTenantRequest): Promise<dto.DeleteTenantResponse> {
+        return this.$hardDeleteMany(params, dto.DeleteTenantResponse)
+    }
+
+    /**
+     * @override
+     */
+    protected $checkDeleteManyViolation(params: dto.DeleteTenantRequest): Promise<Maybe> {
+        return Promise.resolve(Maybe.Nothing())
+    }
+
+    //#endregion Delete
+
+
+    //#region Get
+
+    /**
+     * @see ITenantService.getById
+     */
+    public async getById(params: dto.GetTenantByIdRequest): Promise<dto.GetSingleTenantResponse> {
+        return this.$getById(params, dto.GetSingleTenantResponse)
+    }
+
+    /**
+     * @see ITenantService.getBySlug
+     */
+    public async getBySlug(params: dto.GetTenantBySlugRequest): Promise<dto.GetSingleTenantResponse> {
+        return this.$getById(params, dto.GetSingleTenantResponse)
+    }
+
+    /**
+     * @see ITenantService.getList
+     */
+    public async getList(params: dto.GetTenantListRequest): Promise<dto.GetTenantListResponse> {
+        return this.$getList(params, dto.GetTenantListResponse)
     }
 
     //#endregion Get

@@ -22,7 +22,11 @@ export abstract class GetListRequestBase extends Translatable {
 }
 
 
-export type ListResponseConstructor = (new (items?: object[], total?: number) => any) & ITranslatable
+// tslint:disable-next-line:interface-name
+export interface ListResponseConstructor {
+    new (items?: object[], total?: number): any
+    from(source: object): any
+}
 
 export abstract class DTOListBase<LT> {
     public readonly items: LT[] = undefined
@@ -44,9 +48,9 @@ export abstract class DTOListBase<LT> {
 }
 
 
-export type MaybeResponseConstructor = (new (hasData?: boolean) => MaybeResponse<any>) & ITranslatable
+export type MaybeResponseConstructor = (new (hasData?: boolean) => MaybeResponse) & ITranslatable
 
-export abstract class MaybeResponse<T> extends Translatable {
+export abstract class MaybeResponse extends Translatable {
 
     /**
      * If `false`, other properties are unusable.
@@ -58,16 +62,16 @@ export abstract class MaybeResponse<T> extends Translatable {
         this.hasData = hasData
     }
 
-    public toMaybe(): Maybe<T> {
+    public toMaybe<MT extends ResultResponse>(this: MT): Maybe<MT> {
         return this.hasData
             ? Maybe.Just(this)
             : Maybe.Nothing()
     }
 }
 
-export type ResultResponseConstructor = (new (isOk?: boolean, error?: any) => ResultResponse<any>) & ITranslatable
+export type ResultResponseConstructor = (new (isOk?: boolean, error?: any) => ResultResponse) & ITranslatable
 
-export abstract class ResultResponse<T> extends Translatable {
+export abstract class ResultResponse extends Translatable {
 
     /**
      * If `false`, other properties, except `error`, are unusable.
@@ -85,7 +89,7 @@ export abstract class ResultResponse<T> extends Translatable {
         this.error = error
     }
 
-    public toResult(): Result<T> {
+    public toResult<RT extends ResultResponse>(this: RT): Result<RT> {
         if (this.hasData) {
             const { hasData, error, ...props }: any = this
             return Result.Ok(props)

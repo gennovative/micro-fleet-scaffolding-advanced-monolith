@@ -5,6 +5,7 @@ const util = require('util')
 const readFileAsync = util.promisify(fs.readFile)
 
 exports.up = async function(knex) {
+    const WITHOUT_TIMEZONE = true
     const schema = knex.schema
 
     console.log('** Dropping tables **')
@@ -30,6 +31,8 @@ exports.up = async function(knex) {
 
             tbl.string('name', 100).notNullable()
             tbl.string('slug', 100).notNullable().unique().index()
+            tbl.timestamp('created_at', WITHOUT_TIMEZONE).notNullable()
+            tbl.timestamp('updated_at', WITHOUT_TIMEZONE)
         })
     }
 
@@ -41,6 +44,8 @@ exports.up = async function(knex) {
 
             tbl.string('name', 100).notNullable().index()
             tbl.string('status', 20).defaultTo('active').notNullable()
+            tbl.timestamp('created_at', WITHOUT_TIMEZONE).notNullable()
+            tbl.timestamp('updated_at', WITHOUT_TIMEZONE)
 
             tbl.foreign('tenant_id')
                 .references('id').inTable('mcft_tenants')
