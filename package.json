@@ -16,7 +16,7 @@
         "@micro-fleet/persistence": "=2.3.0-rc1",
         "@micro-fleet/web": "=2.3.0-rc1",
         "debug": "~4.1",
-        "moment": "~2.24"
+        "moment": "~2.29"
     },
     "devDependencies": {
         "@types/debug": "~4.1",
