@@ -14,7 +14,7 @@
         "@micro-fleet/common": "=2.3.0-rc1",
         "@micro-fleet/microservice": "=2.3.0-rc1",
         "@micro-fleet/persistence": "=2.3.0-rc1",
-        "@micro-fleet/web": "=2.3.0-rc1",
+        "@micro-fleet/web": "=2.3.0-rc5",
         "debug": "~4.1",
         "moment": "~2.24"
     },
